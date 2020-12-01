@@ -1,4 +1,4 @@
-import { TypeKind, Type, ClassType, EnumType, UnionType, ClassProperty } from "../Type";
+import { TypeKind, Type, ClassType, EnumType, UnionType, ClassProperty, TransformedStringTypeKind, PrimitiveStringTypeKind } from "../Type";
 import { matchType, nullableFromUnion, removeNullFromUnion } from "../TypeUtils";
 import { Name, DependencyName, Namer, funPrefixNamer } from "../Naming";
 import {
@@ -12,13 +12,14 @@ import {
     allUpperWordStyle,
     camelCase,
 } from "../support/Strings";
-import { assert, defined } from "../support/Support";
+import { assert, defined, panic } from "../support/Support";
 import { StringOption, BooleanOption, Option, OptionValues, getOptionValues } from "../RendererOptions";
 import { Sourcelike, maybeAnnotated, modifySource } from "../Source";
 import { anyTypeIssueAnnotation, nullTypeIssueAnnotation } from "../Annotation";
 import { TargetLanguage } from "../TargetLanguage";
 import { ConvenienceRenderer } from "../ConvenienceRenderer";
 import { RenderContext } from "../Renderer";
+import { StringTypeMapping } from "../TypeBuilder";
 
 export const goOptions = {
     justTypes: new BooleanOption("just-types", "Plain types only", false),
@@ -30,6 +31,17 @@ export const goOptions = {
 export class GoTargetLanguage extends TargetLanguage {
     constructor() {
         super("Go", ["go", "golang"], "go");
+    }
+
+    get stringTypeMapping(): StringTypeMapping {
+        const mapping: Map<TransformedStringTypeKind, PrimitiveStringTypeKind> = new Map();
+        const dateTimeType = "date-time";
+        mapping.set("date", dateTimeType);
+        mapping.set("time", dateTimeType);
+        mapping.set("date-time", dateTimeType);
+        mapping.set("integer-string", "integer-string");
+        mapping.set("bool-string", "bool-string");
+        return mapping;
     }
 
     protected getOptions(): Option<any>[] {
@@ -93,6 +105,7 @@ function canOmitEmpty(cp: ClassProperty): boolean {
 export class GoRenderer extends ConvenienceRenderer {
     private readonly _topLevelUnmarshalNames = new Map<Name, Name>();
     private _currentFilename: string | undefined;
+    private readonly imports: string[] = [];
 
     constructor(
         targetLanguage: TargetLanguage,
@@ -120,6 +133,11 @@ export class GoRenderer extends ConvenienceRenderer {
 
     protected get enumCasesInGlobalNamespace(): boolean {
         return true;
+    }
+
+    protected withImport(packageName: string, name: string): Sourcelike {
+        if (this.imports.indexOf(packageName) === -1) this.imports.push(packageName);
+        return packageName.split("/").pop() + "." + name;
     }
 
     protected makeTopLevelDependencyNames(_: Type, topLevelName: Name): DependencyName[] {
@@ -214,6 +232,12 @@ export class GoRenderer extends ConvenienceRenderer {
                 const nullable = nullableFromUnion(unionType);
                 if (nullable !== null) return this.nullableGoType(nullable, withIssues);
                 return this.nameForNamedType(unionType);
+            },
+            (transformedStringType) => {
+                if (transformedStringType.kind === "date-time") {
+                    return this.withImport("time", "Time");
+                }
+                return panic(`Transformed string type ${transformedStringType.kind} not supported`);
             }
         );
     }
@@ -257,6 +281,12 @@ export class GoRenderer extends ConvenienceRenderer {
             this.emitLine("return json.Marshal(r)");
         });
         this.endFile();
+    }
+
+    private testClass(c: ClassType): void {
+        this.forEachClassProperty(c, "none", (_name, _jsonName, p) => {
+            this.propertyGoType(p);
+        });
     }
 
     private emitClass(c: ClassType, className: Name): void {
@@ -403,13 +433,15 @@ export class GoRenderer extends ConvenienceRenderer {
         if (!this._options.justTypes && !this._options.justTypesAndPackage) {
             this.ensureBlankLine();
             if (this.haveNamedUnions && this._options.multiFileOutput === false) {
-                this.emitLineOnce('import "bytes"');
-                this.emitLineOnce('import "errors"');
+                this.withImport("bytes", "");
+                this.withImport("errors", "");
             }
 
             if (includeJSONEncodingImport) {
-                this.emitLineOnce('import "encoding/json"');
+                this.withImport("encoding/json", "");
             }
+
+            this.imports.forEach(packageName => this.emitLineOnce(`import "${packageName}"`));
             this.ensureBlankLine();
         }
     }
@@ -417,11 +449,11 @@ export class GoRenderer extends ConvenienceRenderer {
     private emitHelperFunctions(): void {
         if (this.haveNamedUnions) {
             this.startFile("JSONSchemaSupport");
-            this.emitPackageDefinitons(true);
             if (this._options.multiFileOutput) {
-                this.emitLineOnce('import "bytes"');
-                this.emitLineOnce('import "errors"');
+                this.withImport("bytes", "");
+                this.withImport("errors", "");
             }
+            this.emitPackageDefinitons(true);
             this.ensureBlankLine();
             this
                 .emitMultiline(`func unmarshalUnion(data []byte, pi **int, pf **float64, pb **bool, ps **string, haveArray bool, pa interface{}, haveObject bool, pc interface{}, haveMap bool, pm interface{}, haveEnum bool, pe interface{}, nullable bool) (bool, error) {
@@ -551,6 +583,7 @@ func marshalUnion(pi *int, pf *float64, pb *bool, ps *string, haveArray bool, pa
             this.emitSingleFileHeaderComments();
         }
 
+        this.forEachObject("leading-and-interposing", (c: ClassType, _className: Name) => this.testClass(c));
         this.forEachTopLevel(
             "leading-and-interposing",
             (t, name) => this.emitTopLevel(t, name),
