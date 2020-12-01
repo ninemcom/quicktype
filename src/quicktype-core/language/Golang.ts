@@ -194,7 +194,7 @@ export class GoRenderer extends ConvenienceRenderer {
             (_anyType) => maybeAnnotated(withIssues, anyTypeIssueAnnotation, "interface{}"),
             (_nullType) => maybeAnnotated(withIssues, nullTypeIssueAnnotation, "interface{}"),
             (_boolType) => "bool",
-            (_integerType) => "int64",
+            (_integerType) => "int",
             (_doubleType) => "float64",
             (_stringType) => "string",
             (arrayType) => ["[]", this.goType(arrayType.items, withIssues)],
@@ -424,7 +424,7 @@ export class GoRenderer extends ConvenienceRenderer {
             }
             this.ensureBlankLine();
             this
-                .emitMultiline(`func unmarshalUnion(data []byte, pi **int64, pf **float64, pb **bool, ps **string, haveArray bool, pa interface{}, haveObject bool, pc interface{}, haveMap bool, pm interface{}, haveEnum bool, pe interface{}, nullable bool) (bool, error) {
+                .emitMultiline(`func unmarshalUnion(data []byte, pi **int, pf **float64, pb **bool, ps **string, haveArray bool, pa interface{}, haveObject bool, pc interface{}, haveMap bool, pm interface{}, haveEnum bool, pe interface{}, nullable bool) (bool, error) {
     if pi != nil {
         *pi = nil
     }
@@ -448,7 +448,7 @@ export class GoRenderer extends ConvenienceRenderer {
     switch v := tok.(type) {
     case json.Number:
         if pi != nil {
-            i, err := v.Int64()
+            i, err := v.Int()
             if err == nil {
                 *pi = &i
                 return false, nil
@@ -507,7 +507,7 @@ export class GoRenderer extends ConvenienceRenderer {
 
 }
 
-func marshalUnion(pi *int64, pf *float64, pb *bool, ps *string, haveArray bool, pa interface{}, haveObject bool, pc interface{}, haveMap bool, pm interface{}, haveEnum bool, pe interface{}, nullable bool) ([]byte, error) {
+func marshalUnion(pi *int, pf *float64, pb *bool, ps *string, haveArray bool, pa interface{}, haveObject bool, pc interface{}, haveMap bool, pm interface{}, haveEnum bool, pe interface{}, nullable bool) ([]byte, error) {
     if pi != nil {
         return json.Marshal(*pi)
     }
