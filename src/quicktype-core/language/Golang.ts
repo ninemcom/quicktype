@@ -430,15 +430,17 @@ export class GoRenderer extends ConvenienceRenderer {
             this.ensureBlankLine();
         }
 
-        if (!this._options.justTypes && !this._options.justTypesAndPackage) {
-            this.ensureBlankLine();
-            if (this.haveNamedUnions && this._options.multiFileOutput === false) {
-                this.withImport("bytes", "");
-                this.withImport("errors", "");
-            }
+        if (!this._options.justTypes) {
+            if (!this._options.justTypesAndPackage) {
+                this.ensureBlankLine();
+                if (this.haveNamedUnions && this._options.multiFileOutput === false) {
+                    this.withImport("bytes", "");
+                    this.withImport("errors", "");
+                }
 
-            if (includeJSONEncodingImport) {
-                this.withImport("encoding/json", "");
+                if (includeJSONEncodingImport) {
+                    this.withImport("encoding/json", "");
+                }
             }
 
             this.imports.forEach(packageName => this.emitLineOnce(`import "${packageName}"`));
